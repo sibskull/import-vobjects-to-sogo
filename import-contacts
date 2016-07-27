@@ -3,35 +3,117 @@
 # Script for add contacts from files SOGo database
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
-VERSION="1.0.0"
+VERSION = '1.0.0'
+contact_file_name = 'contacts'
+verbose = False
+folders = []
 
 import argparse
 import sys
 import pprint
+import os
+import psycopg2
+
+# Classes
+class DB:
+	"""Class for database connection"""
+	conn = None
+	cursor = None
+	connection_string = ''
+
+	def __init__( self ):
+		"""Init connection"""
+
+	def connect( self, connection_string ):
+		"""Connect to database"""
+		self.conection_string = conection_string
+		if verbose:
+			print( "Connect to database %s..." % ( self.connection_string ) )
+		self.conn = psycopg2.connect( self.connection_string )
+		self.cursor = sef.conn.cursor()
+
+	def query( self, query ):
+		"""Perform SQL query"""
+		# TODO
+		# self.cursor.execute("SELECT * FROM my_table")
+		# records = self.cursor.fetchall()
+
+	def disconnect( self ):
+		"""Disconnect from database"""
+		if verbose:
+			print( "Disconnect from database %s..." % ( self.connection_string ) )
+		self.conn.close()
+
+db = DB()
+
+class Folder:
+	"""Class of vCard folder"""
+	items = []
+	file_name = ""
+	folder_path = []
+
+	def __init__( self, base_path, directory ):
+		"""Create new folder instance"""
+		self.file_name = os.path.join( base_path, directory, contact_file_name )
+		self.folder_path = directory.split( os.sep )
+
+	def read( self ):
+		"""Open file and read all vCard items in self.items"""
+		if verbose:
+			print( "TODO Folder.read(%s)..." % ( self.file_name ) )
+		# TODO
+
+	def store_database( self, cursor ):
+		"""Store values to specied database"""
+		if verbose:
+			print( "TODO Folder.store_database(%s)..." % ( db.connection_string ) )
+		# Create folders structure
+		if verbose:
+			print( "TODO Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
+		# Dump vCard contents
+		if verbose:
+			print( "TODO Store vCard content" )
+		# Parse each vCard and put values in database
+		if verbose:
+			print( "TODO Put parsed values" )
 
 # Parse command line arguments
-parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database' )
-parser.add_argument( 'user_name', nargs=1,
+parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database',
+                                  epilog="Example: ./import-contacts --db 'postgresql://sogo@/sogo/sogo_folder_info' dod" )
+parser.add_argument( 'user_name',
                      help='SOGo user name' )
-parser.add_argument( '--db', dest='db_connect',
-                     help='SOGo database connection string' )
+parser.add_argument( '--db', dest='db_connect', required=True,
+                     help='SOGo database connection string (see OCSFolderInfoURL in /etc/sogo/sogo.conf)' )
 parser.add_argument( '--dir', dest='directory', default='.',
                      help='Path to directory with imported folders' )
+parser.add_argument( '-v', dest='verbose', action='count',
+                     help='Be more verbose' )
 parser.add_argument( '--version', action='version', version=VERSION )
 args = parser.parse_args()
 
-pprint.pprint( (db_connect, user_name, directory ) )
+if args.verbose != None:
+	verbose = True
+	print( 'Run with following arguments:' )
+	pprint.pprint( args )
 
-# Check database and user name
+# Connect to database
+try:
+	# Get a connection
+	db.connect( args.db_connect )
+except:
+	print( "Cannot connect to database %s:" % ( args.db_connect ) )
 
-# Walk through folders
-
-# Open file and store as list of vobject objects (vCard)
-
-# Connect to database 
-
-# Create folders structure
-
-# Dump vCard contents
-
-# Parse each vCard and put values in database
+# Walk through folders containing file contacts
+for cdir, dirs, files in os.walk( args.directory ):
+	if contact_file_name in files:
+		if verbose:
+			print( "Found %s with %s" % ( cdir, contact_file_name ) )
+		# Remove basedir from path and possible os.sep
+		if args.directory[-1:] == os.sep:
+			args.directory = args.directory[:-1]
+		folder = Folder( args.directory, cdir[len(args.directory)+1:] )
+		folders.append( folder )
+		# Open file and store as list of vobject objects (vCard)
+		folder.read()
+		# Store in database
+		folder.store_database( args.db_connect )
