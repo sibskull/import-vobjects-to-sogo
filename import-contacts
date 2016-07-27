@@ -1,0 +1,37 @@
+#!/usr/bin/python3
+
+# Script for add contacts from files SOGo database
+# (c) 2016 Andrey Cherepanov <cas@altlinux.org>
+
+VERSION="1.0.0"
+
+import argparse
+import sys
+import pprint
+
+# Parse command line arguments
+parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database' )
+parser.add_argument( 'user_name', nargs=1,
+                     help='SOGo user name' )
+parser.add_argument( '--db', dest='db_connect',
+                     help='SOGo database connection string' )
+parser.add_argument( '--dir', dest='directory', default='.',
+                     help='Path to directory with imported folders' )
+parser.add_argument( '--version', action='version', version=VERSION )
+args = parser.parse_args()
+
+pprint.pprint( (db_connect, user_name, directory ) )
+
+# Check database and user name
+
+# Walk through folders
+
+# Open file and store as list of vobject objects (vCard)
+
+# Connect to database 
+
+# Create folders structure
+
+# Dump vCard contents
+
+# Parse each vCard and put values in database
