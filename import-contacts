@@ -10,9 +10,10 @@ folders = []
 
 import argparse
 import sys
-import pprint
+from pprint import pprint
 import os
 import psycopg2
+import vobject
 
 # Classes
 class DB:
@@ -20,23 +21,32 @@ class DB:
 	conn = None
 	cursor = None
 	connection_string = ''
+	user = ''
 
 	def __init__( self ):
 		"""Init connection"""
 
-	def connect( self, connection_string ):
+	def connect( self, connection_string, user_name ):
 		"""Connect to database"""
-		self.conection_string = conection_string
+		self.connection_string = connection_string
+		self.user = user_name
 		if verbose:
-			print( "Connect to database %s..." % ( self.connection_string ) )
+			print( "Connect to database %s to serve user %s..." % ( self.connection_string, self.user ) )
 		self.conn = psycopg2.connect( self.connection_string )
-		self.cursor = sef.conn.cursor()
+		self.cursor = self.conn.cursor()
 
-	def query( self, query ):
-		"""Perform SQL query"""
-		# TODO
-		# self.cursor.execute("SELECT * FROM my_table")
-		# records = self.cursor.fetchall()
+	def query( self, query, args=None ):
+		"""Perform SQL query: as string or with optional arguments"""
+		records = None
+		if args != None:
+			query = self.cursor.mogrify( query, args )
+		try:
+			res = self.cursor.execute( query )
+			records = self.cursor.fetchall()
+		except:
+			print( "Error in query %s" % ( self.cursor.query ) )
+			pass
+		return records
 
 	def disconnect( self ):
 		"""Disconnect from database"""
@@ -60,48 +70,62 @@ class Folder:
 	def read( self ):
 		"""Open file and read all vCard items in self.items"""
 		if verbose:
-			print( "TODO Folder.read(%s)..." % ( self.file_name ) )
-		# TODO
+			print( "Folder.read(%s)..." % ( self.file_name ) )
+		try:
+			stream = open( self.file_name, 'r', encoding='utf-8' )
+			for obj in vobject.readComponents( stream ):
+				if obj.name == 'VCARD':
+					self.items.append( obj )
+			if verbose:
+				print( "Read vcards: %d" % ( len( self.items ) ) )
+			stream.close()
+		except:
+			print( "Error reading contacts from %s" % ( self.file_name ) )
+			raise
 
 	def store_database( self, cursor ):
 		"""Store values to specied database"""
 		if verbose:
-			print( "TODO Folder.store_database(%s)..." % ( db.connection_string ) )
+			print( "Folder.store_database(%s)..." % ( db.connection_string ) )
 		# Create folders structure
 		if verbose:
 			print( "TODO Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
+		res = db.query( "select * from sogo_folder_info where c_folder_type='Contact' and c_path2=%s;", [ db.user ] )
+		# pprint( res )
+
 		# Dump vCard contents
 		if verbose:
 			print( "TODO Store vCard content" )
 		# Parse each vCard and put values in database
 		if verbose:
 			print( "TODO Put parsed values" )
+		# Create empty table with ACLs
+		if verbose:
+			print( "TODO Create empty table with ACLs" )
 
 # Parse command line arguments
 parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database',
                                   epilog="Example: ./import-contacts --db 'postgresql://sogo@/sogo/sogo_folder_info' dod" )
-parser.add_argument( 'user_name',
-                     help='SOGo user name' )
+parser.add_argument( 'user_name', help='SOGo user name' )
 parser.add_argument( '--db', dest='db_connect', required=True,
                      help='SOGo database connection string (see OCSFolderInfoURL in /etc/sogo/sogo.conf)' )
-parser.add_argument( '--dir', dest='directory', default='.',
-                     help='Path to directory with imported folders' )
-parser.add_argument( '-v', dest='verbose', action='count',
-                     help='Be more verbose' )
+parser.add_argument( '--dir', dest='directory', default='.', help='Path to directory with imported folders' )
+parser.add_argument( '-v', dest='verbose', action='count', help='Be more verbose' )
 parser.add_argument( '--version', action='version', version=VERSION )
 args = parser.parse_args()
 
 if args.verbose != None:
 	verbose = True
 	print( 'Run with following arguments:' )
-	pprint.pprint( args )
+	pprint( args )
 
 # Connect to database
 try:
 	# Get a connection
-	db.connect( args.db_connect )
+	db.connect( args.db_connect, args.user_name )
 except:
 	print( "Cannot connect to database %s:" % ( args.db_connect ) )
+	raise
 
 # Walk through folders containing file contacts
 for cdir, dirs, files in os.walk( args.directory ):
