@@ -10,10 +10,11 @@ folders = []
 
 import argparse
 import sys
-from pprint import pprint
 import os
 import psycopg2
 import vobject
+import uuid 
+from pprint import pprint
 
 # Classes
 class DB:
@@ -59,13 +60,21 @@ db = DB()
 class Folder:
 	"""Class of vCard folder"""
 	items = []
-	file_name = ""
+	file_name = ''
 	folder_path = []
+	uuid = ''
 
 	def __init__( self, base_path, directory ):
 		"""Create new folder instance"""
 		self.file_name = os.path.join( base_path, directory, contact_file_name )
 		self.folder_path = directory.split( os.sep )
+
+	def generate_uuid( self ):
+		"""Generate filder UUID"""
+		x = uuid.uuid4()
+		t = x.__str__()
+		z = t.replace( '-', '' )
+		self.uuid = ( z[0:4] + '-' + z[4:12] + '-' + z[12] + '-' + z[13:21] ).upper()
 
 	def read( self ):
 		"""Open file and read all vCard items in self.items"""
