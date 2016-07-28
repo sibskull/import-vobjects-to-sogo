@@ -12,41 +12,79 @@ import argparse
 import sys
 import os
 import psycopg2
+import psycopg2.errorcodes
 import vobject
 import uuid 
 from pprint import pprint
+from psycopg2.extras import NamedTupleCursor
+
+# Functions
+def generate_uuid( len=24 ):
+	"""Generate filder UUID"""
+	x = uuid.uuid4()
+	t = x.__str__()
+	z = t.replace( '-', '' )
+	u = ( z[0:4] + '-' + z[4:12] + '-' + z[12] + '-' + z[13:21] ).upper()
+	if len == 24:
+		return u
+	else:
+		return z[:len]
 
 # Classes
 class DB:
 	"""Class for database connection"""
 	conn = None
 	cursor = None
+	ncursor = None
 	connection_string = ''
+	location = ''
 	user = ''
 
 	def __init__( self ):
 		"""Init connection"""
 
-	def connect( self, connection_string, user_name ):
+	def connect( self, connection_string, user_name, location='' ):
 		"""Connect to database"""
 		self.connection_string = connection_string
 		self.user = user_name
+		self.location = location
+		if self.location == '':
+			self.location = self.connection_string
 		if verbose:
 			print( "Connect to database %s to serve user %s..." % ( self.connection_string, self.user ) )
 		self.conn = psycopg2.connect( self.connection_string )
 		self.cursor = self.conn.cursor()
+		self.ncursor = self.conn.cursor( cursor_factory=NamedTupleCursor )
 
-	def query( self, query, args=None ):
+	def query( self, query, args=None, as_dict=False ):
 		"""Perform SQL query: as string or with optional arguments"""
-		records = None
-		if args != None:
-			query = self.cursor.mogrify( query, args )
-		try:
-			res = self.cursor.execute( query )
-			records = self.cursor.fetchall()
-		except:
-			print( "Error in query %s" % ( self.cursor.query ) )
-			pass
+		if as_dict == True:
+			# Return as dictionary
+			records = None
+			try:
+				if args != None:
+					query = self.ncursor.mogrify( query, args )
+				res = self.ncursor.execute( query )
+				records = self.ncursor.fetchone()
+			except psycopg2.ProgrammingError:
+				pass
+#			except psycopg2.Error as e:
+#				print( "DATABASE ERROR [%s] %s" % ( e.pgcode, e.diag.message_primary ) )
+#				print(psycopg2.errorcodes.lookup(e.pgcode[:2]))
+#				print(psycopg2.errorcodes.lookup(e.pgcode))
+		else:
+			# Ordinary cursor
+			records = []
+			try:
+				if args != None:
+					query = self.cursor.mogrify( query, args )
+				#print( query )
+				res = self.cursor.execute( query )
+				if self.cursor.rowcount > 0:
+					records = self.cursor.fetchall()
+			except:
+				#print( "Error in query %s" % ( self.cursor.query ) )
+				raise
 		return records
 
 	def disconnect( self ):
@@ -57,24 +95,124 @@ class DB:
 
 db = DB()
 
+class FolderRecord:
+	"""Class for representative Folder in database"""
+	user = ''
+	name = ''
+	real_name = ''
+	table_name = ''
+	c_folder_id = ''
+	c_path = ''
+	c_path1 = 'Users'
+	c_path2 = ''
+	c_path3 = 'Contacts'
+	c_path4 = 'personal'
+	c_foldername = 'Personal Address Book'
+	c_location = ''
+	c_quick_location = ''
+	c_acl_location = ''
+	c_folder_type = 'Contact'
+	uuid = ''
+	short_uuid = ''
+	db_main_table = ''
+
+	def __init__( self, user, name ):
+		"""Init values for user and folder name: use existing of fill defaults"""
+		self.user = user
+		self.name = name
+
+		# Process folder name and path
+		self.c_path2 = self.user
+		base_name  = name.split( '/' )[-1:][0]
+		if name != 'Контакты':
+			self.uuid = generate_uuid()
+			self.c_path4 = self.uuid
+			self.c_foldername = base_name
+		self.c_path = '/' + self.c_path1 + '/' + self.c_path2 + '/'+ self.c_path3 + '/'+ self.c_path4
+
+		# Short UUID and locations
+		self.short_uuid = generate_uuid( 11 )
+		# Example: postgresql://sogo:1234@localhost:5432/sogo/sogodod001541a8862
+		self.db_main_table = 'sogo' + db.user + self.short_uuid
+		self.c_location = db.location + '/' + self.db_main_table
+		self.c_quick_location = self.c_location + '_quick'
+		self.c_acl_location = self.c_location + '_acl'
+
+	def save( self ):
+		"""Save FolderRecord to database table sogo_folder_info, create tables for folder data"""
+		if verbose:
+			print( "Check if %s exists" % ( self.c_path ) )
+		# Check if record exists
+		res = db.query( "select * from sogo_folder_info where c_folder_type='Contact' and c_path2=%s and c_foldername=%s;",
+				[ self.c_path2, self.c_foldername ],
+				as_dict=True )
+		pprint( res )
+		if res != None:
+			# Record is exist
+			self.c_path  = res.c_path
+			self.c_path1 = res.c_path1
+			self.c_path2 = res.c_path2
+			self.c_path3 = res.c_path3
+			self.c_path4 = res.c_path4
+			self.c_foldername = res.c_foldername
+			self.c_location = res.c_location
+			self.c_quick_location = res.c_quick_location
+			self.c_acl_location = res.c_acl_location
+			self.c_folder_type = res.c_folder_type
+			self.db_main_table = self.c_location.split( '/' )[-1:][0]
+		else:
+			# New record
+			db.query( """insert into sogo_folder_info(c_path,c_path1,c_path2,c_path3,c_path4,c_foldername,c_location,c_quick_location,c_acl_location,c_folder_type)
+			           values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+			           [ self.c_path, self.c_path1, self.c_path2, self.c_path3, self.c_path4, self.c_foldername,
+			             self.c_location, self.c_quick_location, self.c_acl_location, self.c_folder_type ] )
+
+		# Create data table for folder
+		print( "CREATE TABLE %s" % ( self.db_main_table ) )
+		print( "CREATE TABLE %s_quick" % ( self.db_main_table ) )
+		print( "CREATE TABLE %s_acl" % ( self.db_main_table ) )
+		db.query( """CREATE TABLE IF NOT EXISTS %s (
+				c_name varchar(255) NOT NULL,
+				c_content text NOT NULL,
+				c_creationdate int4 NOT NULL,
+				c_lastmodified int4 NOT NULL,
+				c_version int4 NOT NULL,
+				c_deleted int4 NULL,
+				CONSTRAINT %s PRIMARY KEY (c_name) );""" %
+				( self.db_main_table, self.db_main_table+'_pkey' ) )
+		db.query( """CREATE TABLE IF NOT EXISTS %s (
+				c_name varchar(255) NOT NULL,
+				c_givenname varchar(255) NULL,
+				c_cn varchar(255) NULL,
+				c_sn varchar(255) NULL,
+				c_screenname varchar(255) NULL,
+				c_l varchar(255) NULL,
+				c_mail varchar(255) NULL,
+				c_o varchar(255) NULL,
+				c_ou varchar(255) NULL,
+				c_telephonenumber varchar(255) NULL,
+				c_categories varchar(255) NULL,
+				c_component varchar(10) NOT NULL,
+				CONSTRAINT %s PRIMARY KEY (c_name) );""" %
+				( self.db_main_table+'_quick', self.db_main_table+'_quick_pkey' ) )
+		db.query( """CREATE TABLE IF NOT EXISTS %s (
+				c_uid varchar(255) NOT NULL,
+				c_object varchar(255) NOT NULL,
+				c_role varchar(80) NOT NULL );""" %
+				( self.db_main_table+'_acl' ) )
+		db.query( 'commit' )
+
 class Folder:
 	"""Class of vCard folder"""
 	items = []
 	file_name = ''
 	folder_path = []
-	uuid = ''
+	record = None
 
 	def __init__( self, base_path, directory ):
 		"""Create new folder instance"""
 		self.file_name = os.path.join( base_path, directory, contact_file_name )
 		self.folder_path = directory.split( os.sep )
-
-	def generate_uuid( self ):
-		"""Generate filder UUID"""
-		x = uuid.uuid4()
-		t = x.__str__()
-		z = t.replace( '-', '' )
-		self.uuid = ( z[0:4] + '-' + z[4:12] + '-' + z[12] + '-' + z[13:21] ).upper()
 
 	def read( self ):
 		"""Open file and read all vCard items in self.items"""
@@ -92,15 +230,15 @@ class Folder:
 			print( "Error reading contacts from %s" % ( self.file_name ) )
 			raise
 
-	def store_database( self, cursor ):
+	def save( self, cursor ):
 		"""Store values to specied database"""
 		if verbose:
 			print( "Folder.store_database(%s)..." % ( db.connection_string ) )
 		# Create folders structure
 		if verbose:
-			print( "TODO Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
-		res = db.query( "select * from sogo_folder_info where c_folder_type='Contact' and c_path2=%s;", [ db.user ] )
-		# pprint( res )
+			print( "Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
+		self.record = FolderRecord( db.user, os.sep.join( self.folder_path ) )
+		self.record.save()
 
 		# Dump vCard contents
 		if verbose:
@@ -118,6 +256,8 @@ parser = argparse.ArgumentParser( description='Script for import contacts from f
 parser.add_argument( 'user_name', help='SOGo user name' )
 parser.add_argument( '--db', dest='db_connect', required=True,
                      help='SOGo database connection string (see OCSFolderInfoURL in /etc/sogo/sogo.conf)' )
+parser.add_argument( '--location', dest='location',
+                     help='SOGo location string (see OCSFolderInfoURL in /etc/sogo/sogo.conf without folder)' )
 parser.add_argument( '--dir', dest='directory', default='.', help='Path to directory with imported folders' )
 parser.add_argument( '-v', dest='verbose', action='count', help='Be more verbose' )
 parser.add_argument( '--version', action='version', version=VERSION )
@@ -131,7 +271,7 @@ if args.verbose != None:
 # Connect to database
 try:
 	# Get a connection
-	db.connect( args.db_connect, args.user_name )
+	db.connect( args.db_connect, args.user_name, args.location )
 except:
 	print( "Cannot connect to database %s:" % ( args.db_connect ) )
 	raise
@@ -149,4 +289,4 @@ for cdir, dirs, files in os.walk( args.directory ):
 		# Open file and store as list of vobject objects (vCard)
 		folder.read()
 		# Store in database
-		folder.store_database( args.db_connect )
+		folder.save( args.db_connect )
