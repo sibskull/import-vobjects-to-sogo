@@ -14,9 +14,13 @@ import os
 import psycopg2
 import psycopg2.errorcodes
 import vobject
-import uuid 
+import uuid
+import time
 from pprint import pprint
 from psycopg2.extras import NamedTupleCursor
+
+# Get timestamp
+timestamp = int(time.time())
 
 # Functions
 def generate_uuid( len=24 ):
@@ -39,6 +43,7 @@ class DB:
 	connection_string = ''
 	location = ''
 	user = ''
+	last_query = ''
 
 	def __init__( self ):
 		"""Init connection"""
@@ -56,15 +61,19 @@ class DB:
 		self.cursor = self.conn.cursor()
 		self.ncursor = self.conn.cursor( cursor_factory=NamedTupleCursor )
 
-	def query( self, query, args=None, as_dict=False ):
+	def query( self, query, args=None, as_dict=False, debug=False ):
 		"""Perform SQL query: as string or with optional arguments"""
 		if as_dict == True:
 			# Return as dictionary
 			records = None
 			try:
 				if args != None:
-					query = self.ncursor.mogrify( query, args )
-				res = self.ncursor.execute( query )
+					self.last_query = self.ncursor.mogrify( query, args )
+				else:
+					self.last_query = query
+				if debug:
+					print( self.last_query )
+				res = self.ncursor.execute( self.last_query )
 				records = self.ncursor.fetchone()
 			except psycopg2.ProgrammingError:
 				pass
@@ -77,11 +86,23 @@ class DB:
 			records = []
 			try:
 				if args != None:
-					query = self.cursor.mogrify( query, args )
-				#print( query )
-				res = self.cursor.execute( query )
+					self.last_query = self.cursor.mogrify( query, args )
+				else:
+					self.last_query = query
+				if debug:
+					print( self.last_query )
+				res = self.cursor.execute( self.last_query )
+				if debug:
+					print( 'Result: ', self.cursor.rowcount )
 				if self.cursor.rowcount > 0:
 					records = self.cursor.fetchall()
+				if self.cursor.rowcount == -1 and self.last_query[:12] != 'CREATE TABLE' and self.last_query != 'COMMIT':
+					print( "Error in query %s" % ( self.last_query ) )
+			except psycopg2.Error as e:
+				if e.pgcode != None:
+					print( "DATABASE ERROR [%s] %s" % ( e.pgcode, e.diag.message_primary ) )
+					print(psycopg2.errorcodes.lookup(e.pgcode[:2]))
+					print(psycopg2.errorcodes.lookup(e.pgcode))
 			except:
 				#print( "Error in query %s" % ( self.cursor.query ) )
 				raise
@@ -146,7 +167,7 @@ class FolderRecord:
 		res = db.query( "select * from sogo_folder_info where c_folder_type='Contact' and c_path2=%s and c_foldername=%s;",
 				[ self.c_path2, self.c_foldername ],
 				as_dict=True )
-		pprint( res )
+
 		if res != None:
 			# Record is exist
 			self.c_path  = res.c_path
@@ -168,9 +189,11 @@ class FolderRecord:
 			             self.c_location, self.c_quick_location, self.c_acl_location, self.c_folder_type ] )
 
 		# Create data table for folder
-		print( "CREATE TABLE %s" % ( self.db_main_table ) )
-		print( "CREATE TABLE %s_quick" % ( self.db_main_table ) )
-		print( "CREATE TABLE %s_acl" % ( self.db_main_table ) )
+		if verbose:
+			print( "CREATE TABLE %s" % ( self.db_main_table ) )
+			print( "CREATE TABLE %s_quick" % ( self.db_main_table ) )
+			print( "CREATE TABLE %s_acl" % ( self.db_main_table ) )
+
 		db.query( """CREATE TABLE IF NOT EXISTS %s (
 				c_name varchar(255) NOT NULL,
 				c_content text NOT NULL,
@@ -200,7 +223,72 @@ class FolderRecord:
 				c_object varchar(255) NOT NULL,
 				c_role varchar(80) NOT NULL );""" %
 				( self.db_main_table+'_acl' ) )
-		db.query( 'commit' )
+		db.query( 'COMMIT' )
+		return self.db_main_table
+
+class vCardRecord:
+	"""Class of single vCard"""
+	obj = None
+	file = ''
+	table = ''
+
+	def __init__( self, obj ):
+		"""Create new vCard object to put into database"""
+		self.obj = obj
+		self.file = generate_uuid() + '.vcf'
+
+	def getValue( self, name ):
+		"""Get value or None if is empty"""
+		if name == 'mail':
+			name = 'email'
+		return self.obj.getChildValue( name )
+
+	def saveCard( self ):
+		"""Save vCard content to table sogo<user><uuid>"""
+		try:
+			db.query( """insert into """ + self.table + """(c_name,c_content,c_creationdate,c_lastmodified,c_version)
+				  values(%s,%s,%s,%s,%s)""",
+				  [ self.file, self.obj.serialize(), timestamp, timestamp, 0 ] )
+		except psycopg2.ProgrammingError:
+			pass
+		except:
+			raise
+
+	def saveValues( self ):
+		"""Save vCard values to table sogo<user><uuid>_quick"""
+
+		# Prepare list of columns of existing values
+		columns = [ 'name', 'component' ]
+		values  = [ self.file, 'vlist' ]
+		types = []
+
+		for c in [ 'givename', 'cn', 'sn', 'screenname', 'l', 'mail', 'o', 'ou', 'telephonenumber', 'categories' ]:
+			v = self.getValue( c )
+			if v != None:
+				columns.append( c )
+				values.append( v )
+
+		# Modify lists
+		for i, col in enumerate( columns ):
+			columns[i] = 'c_' + columns[i]
+			types.append( '%s' )
+
+		try:
+			db.query( 'insert into %s_quick(%s) values(%s)' %
+				  ( self.table, ','.join( columns ), ','.join( types ) ),
+				  values )
+		except psycopg2.Error as e:
+			if e.pgcode == None:
+				pass
+			else:
+				raise
+
+	def save( self, table='' ):
+		"""Save vCard data in two tables"""
+		if table != '':
+			self.table = table
+			self.saveCard()
+			self.saveValues()
 
 class Folder:
 	"""Class of vCard folder"""
@@ -208,6 +296,7 @@ class Folder:
 	file_name = ''
 	folder_path = []
 	record = None
+	db_main_table = ''
 
 	def __init__( self, base_path, directory ):
 		"""Create new folder instance"""
@@ -222,7 +311,8 @@ class Folder:
 			stream = open( self.file_name, 'r', encoding='utf-8' )
 			for obj in vobject.readComponents( stream ):
 				if obj.name == 'VCARD':
-					self.items.append( obj )
+					# Put in list vCardRecord object
+					self.items.append( vCardRecord( obj ) )
 			if verbose:
 				print( "Read vcards: %d" % ( len( self.items ) ) )
 			stream.close()
@@ -233,22 +323,19 @@ class Folder:
 	def save( self, cursor ):
 		"""Store values to specied database"""
 		if verbose:
-			print( "Folder.store_database(%s)..." % ( db.connection_string ) )
+			print( "Folder.save(%s)..." % ( db.connection_string ) )
 		# Create folders structure
 		if verbose:
 			print( "Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
 		self.record = FolderRecord( db.user, os.sep.join( self.folder_path ) )
-		self.record.save()
+		self.db_main_table = self.record.save()
 
 		# Dump vCard contents
 		if verbose:
-			print( "TODO Store vCard content" )
-		# Parse each vCard and put values in database
-		if verbose:
-			print( "TODO Put parsed values" )
-		# Create empty table with ACLs
-		if verbose:
-			print( "TODO Create empty table with ACLs" )
+			print( "Folder.save.vcard_content" )
+		for card in self.items:
+			# Store vCard content and values to database
+			card.save( self.db_main_table )
 
 # Parse command line arguments
 parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database',
