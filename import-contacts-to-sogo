@@ -264,8 +264,8 @@ class vCardRecord:
 			'screenname': self.obj.getChildValue( 'X-AIM' ),
 			'l': self.obj.adr.value.city if self.obj.getChildValue( 'adr' ) != None else None,
 			'mail': self.obj.getChildValue( 'email' ),
-			'o': self.obj.getChildValue( 'org' ),
-			'ou': self.obj.getChildValue( 'ou' ), # TODO Wrong parse org and ou in OrgBehavior
+			'o': self.obj.org.value[0] if self.obj.getChildValue('org')!=None else None,
+			'ou': ', '.join(self.obj.org.value[1:]) if self.obj.getChildValue('org')!=None else None,
 			'telephonenumber': self.obj.getChildValue( 'tel' ),
 			'categories': self.obj.getChildValue( 'categories' ),
 		}.items():
