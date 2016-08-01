@@ -15,6 +15,7 @@ import psycopg2
 import psycopg2.errorcodes
 import vobject
 import uuid
+import hashlib
 import time
 from pprint import pprint
 from psycopg2.extras import NamedTupleCursor
@@ -25,10 +26,10 @@ timestamp = int(time.time())
 # Functions
 def generate_uuid( len=24 ):
 	"""Generate filder UUID"""
-	x = uuid.uuid4()
-	t = x.__str__()
-	z = t.replace( '-', '' )
-	u = ( z[0:4] + '-' + z[4:12] + '-' + z[12] + '-' + z[13:21] ).upper()
+	m = hashlib.sha224()
+	m.update( repr( uuid.uuid4() ).encode( 'utf-8' ) )
+	z = m.digest().hex()
+	u = ( z[0:4] + '-' + z[4:12] + '-' + z[13] + '-' + z[14:21] ).upper()
 	if len == 24:
 		return u
 	else:
