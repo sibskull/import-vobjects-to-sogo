@@ -259,7 +259,7 @@ class vCardRecord:
 
 		for key, value in {
 			'givenname': self.obj.n.value.given,
-			'cn': self.obj.fn.value,
+			'cn': self.obj.fn.value if self.obj.fn.value != '(null)' else None,
 			'sn': self.obj.n.value.family,
 			'screenname': self.obj.getChildValue( 'X-AIM' ),
 			'l': self.obj.adr.value.city if self.obj.getChildValue( 'adr' ) != None else None,
@@ -307,6 +307,8 @@ class Folder:
 		"""Create new folder instance"""
 		self.file_name = os.path.join( base_path, directory, contact_file_name )
 		self.folder_path = directory.split( os.sep )
+		self.items = []
+		db_main_table = ''
 
 	def read( self ):
 		"""Open file and read all vCard items in self.items"""
