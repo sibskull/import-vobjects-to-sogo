@@ -238,12 +238,6 @@ class vCardRecord:
 		self.obj = obj
 		self.file = generate_uuid() + '.vcf'
 
-	def getValue( self, name ):
-		"""Get value or None if is empty"""
-		if name == 'mail':
-			name = 'email'
-		return self.obj.getChildValue( name )
-
 	def saveCard( self ):
 		"""Save vCard content to table sogo<user><uuid>"""
 		try:
@@ -260,14 +254,24 @@ class vCardRecord:
 
 		# Prepare list of columns of existing values
 		columns = [ 'name', 'component' ]
-		values  = [ self.file, 'vlist' ]
+		values  = [ self.file, 'vcard' ]
 		types = []
 
-		for c in [ 'givename', 'cn', 'sn', 'screenname', 'l', 'mail', 'o', 'ou', 'telephonenumber', 'categories' ]:
-			v = self.getValue( c )
-			if v != None:
-				columns.append( c )
-				values.append( v )
+		for key, value in {
+			'givenname': self.obj.n.value.given,
+			'cn': self.obj.fn.value,
+			'sn': self.obj.n.value.family,
+			'screenname': self.obj.getChildValue( 'X-AIM' ),
+			'l': self.obj.adr.value.city if self.obj.getChildValue( 'adr' ) != None else None,
+			'mail': self.obj.getChildValue( 'email' ),
+			'o': self.obj.getChildValue( 'org' ),
+			'ou': self.obj.getChildValue( 'ou' ), # TODO Wrong parse org and ou in OrgBehavior
+			'telephonenumber': self.obj.getChildValue( 'tel' ),
+			'categories': self.obj.getChildValue( 'categories' ),
+		}.items():
+			if value != None:
+				columns.append( key )
+				values.append( value )
 
 		# Modify lists
 		for i, col in enumerate( columns ):
