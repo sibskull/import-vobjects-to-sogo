@@ -1,6 +1,7 @@
-# import-contacts-to-sogo
+# import-vobjects-to-sogo
 
-Script for mass import contacts in vCard format to SOGo folders
+Script for mass import contacts, calendars and todos in vCard/vCalendar 
+format to SOGo folders
 
 (с) 2016 Andrey Cherepanov <cas@altlinux.org>
 
@@ -12,7 +13,7 @@ recommended version 1.9.2 built with upstream commit fe78218:
 
 ### Usage example
 
-    ./import-contacts-to-sogo -v \
+    ./import-vobjects-to-sogo -v \
         --db "postgresql://sogo@/sogo2" \
         --location "postgresql://sogo:1234@localhost:5432/sogo2" \
         user_dod
