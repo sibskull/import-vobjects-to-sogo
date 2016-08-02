@@ -18,12 +18,15 @@ import hashlib
 import time
 from pprint import pprint
 from psycopg2.extras import NamedTupleCursor
+from datetime import datetime, timedelta
 
+# Supported types
 supported_types = {
 	 'vcard':  'contacts',
-	 'vevent': 'calendar',
-	 'vtodo':  'todo'
+	 'calendar': 'calendar',
 	}
+# Default folder names
+default_folders = [ 'Контакты', 'Contacts', 'Календарь', 'Calendar' ]
 
 # Get timestamp
 timestamp = int(time.time())
@@ -122,8 +125,9 @@ class DB:
 
 db = DB()
 
-class vcardFolderRecord:
-	"""Class for representative vcard folder in database"""
+class DBFolder:
+	"""Class for store Folder in database"""
+	type = ''
 	user = ''
 	name = ''
 	real_name = ''
@@ -132,26 +136,36 @@ class vcardFolderRecord:
 	c_path = ''
 	c_path1 = 'Users'
 	c_path2 = ''
-	c_path3 = 'Contacts'
+	c_path3 = ''
 	c_path4 = 'personal'
-	c_foldername = 'Personal Address Book'
+	c_foldername = ''
 	c_location = ''
 	c_quick_location = ''
 	c_acl_location = ''
-	c_folder_type = 'Contact'
+	c_folder_type = ''
 	uuid = ''
 	short_uuid = ''
 	db_main_table = ''
 
-	def __init__( self, user, name ):
+	def __init__( self, type, user, name ):
 		"""Init values for user and folder name: use existing of fill defaults"""
+		self.type = type
 		self.user = user
 		self.name = name
+
+		if type == 'vcard':
+			self.c_path3 = 'Contacts'
+			self.c_foldername = 'Personal Address Book'
+			self.c_folder_type = 'Contact'
+		if type == 'calendar':
+			self.c_path3 = 'Calendar'
+			self.c_foldername = 'Personal Calendar'
+			self.c_folder_type = 'Appointment'
 
 		# Process folder name and path
 		self.c_path2 = self.user
 		base_name  = name.split( '/' )[-1:][0]
-		if name != 'Контакты':
+		if not name in default_folders:
 			self.uuid = generate_uuid()
 			self.c_path4 = self.uuid
 			self.c_foldername = base_name
@@ -170,8 +184,8 @@ class vcardFolderRecord:
 		if verbose:
 			print( "Check if %s exists" % ( self.c_path ) )
 		# Check if record exists
-		res = db.query( "select * from sogo_folder_info where c_folder_type='Contact' and c_path2=%s and c_foldername=%s;",
-				[ self.c_path2, self.c_foldername ],
+		res = db.query( "select * from sogo_folder_info where c_folder_type=%s and c_path2=%s and c_foldername=%s;",
+				[ self.c_folder_type, self.c_path2, self.c_foldername ],
 				as_dict=True )
 
 		if res != None:
@@ -189,6 +203,8 @@ class vcardFolderRecord:
 			self.db_main_table = self.c_location.split( '/' )[-1:][0]
 		else:
 			# New record
+			if verbose:
+				print( "Add folder: %s" % ( self.c_path ) )
 			db.query( """insert into sogo_folder_info(c_path,c_path1,c_path2,c_path3,c_path4,c_foldername,c_location,c_quick_location,c_acl_location,c_folder_type)
 			           values(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
 			           [ self.c_path, self.c_path1, self.c_path2, self.c_path3, self.c_path4, self.c_foldername,
@@ -209,21 +225,49 @@ class vcardFolderRecord:
 				c_deleted int4 NULL,
 				CONSTRAINT %s PRIMARY KEY (c_name) );""" %
 				( self.db_main_table, self.db_main_table+'_pkey' ) )
-		db.query( """CREATE TABLE IF NOT EXISTS %s (
-				c_name varchar(255) NOT NULL,
-				c_givenname varchar(255) NULL,
-				c_cn varchar(255) NULL,
-				c_sn varchar(255) NULL,
-				c_screenname varchar(255) NULL,
-				c_l varchar(255) NULL,
-				c_mail varchar(255) NULL,
-				c_o varchar(255) NULL,
-				c_ou varchar(255) NULL,
-				c_telephonenumber varchar(255) NULL,
-				c_categories varchar(255) NULL,
-				c_component varchar(10) NOT NULL,
-				CONSTRAINT %s PRIMARY KEY (c_name) );""" %
-				( self.db_main_table+'_quick', self.db_main_table+'_quick_pkey' ) )
+		if self.type == 'vcard':
+			db.query( """CREATE TABLE IF NOT EXISTS %s (
+					c_name varchar(255) NOT NULL,
+					c_givenname varchar(255) NULL,
+					c_cn varchar(255) NULL,
+					c_sn varchar(255) NULL,
+					c_screenname varchar(255) NULL,
+					c_l varchar(255) NULL,
+					c_mail varchar(255) NULL,
+					c_o varchar(255) NULL,
+					c_ou varchar(255) NULL,
+					c_telephonenumber varchar(255) NULL,
+					c_categories varchar(255) NULL,
+					c_component varchar(10) NOT NULL,
+					CONSTRAINT %s PRIMARY KEY (c_name) );""" %
+					( self.db_main_table+'_quick', self.db_main_table+'_quick_pkey' ) )
+		elif self.type == 'calendar':
+			db.query( """CREATE TABLE IF NOT EXISTS %s (
+					c_name varchar(255) NOT NULL,
+					c_uid varchar(255) NOT NULL,
+					c_startdate int4 NULL,
+					c_enddate int4 NULL,
+					c_cycleenddate int4 NULL,
+					c_title varchar(1000) NOT NULL,
+					c_participants text NULL,
+					c_isallday int4 NULL,
+					c_iscycle int4 NULL,
+					c_cycleinfo text NULL,
+					c_classification int4 NOT NULL,
+					c_isopaque int4 NOT NULL,
+					c_status int4 NOT NULL,
+					c_priority int4 NULL,
+					c_location varchar(255) NULL,
+					c_orgmail varchar(255) NULL,
+					c_partmails text NULL,
+					c_partstates text NULL,
+					c_category varchar(255) NULL,
+					c_sequence int4 NULL,
+					c_component varchar(10) NOT NULL,
+					c_nextalarm int4 NULL,
+					c_description text NULL,
+					CONSTRAINT %s PRIMARY KEY (c_name) );""" %
+					( self.db_main_table+'_quick', self.db_main_table+'_quick_pkey' ) )
 		db.query( """CREATE TABLE IF NOT EXISTS %s (
 				c_uid varchar(255) NOT NULL,
 				c_object varchar(255) NOT NULL,
@@ -300,6 +344,131 @@ class vCardRecord:
 			self.saveCard()
 			self.saveValues()
 
+class calendarRecord:
+	"""Class of single calendar entry"""
+	obj = None
+	file = ''
+	table = ''
+
+	def __init__( self, obj ):
+		"""Create new vCard object to put into database"""
+		self.obj = obj
+		self.file = generate_uuid() + '.ics'
+
+	def saveCard( self ):
+		"""Save vCard content to table sogo<user><uuid>"""
+		try:
+			db.query( """insert into """ + self.table + """(c_name,c_content,c_creationdate,c_lastmodified,c_version)
+				  values(%s,%s,%s,%s,%s)""",
+				  [ self.file, self.obj.serialize(), timestamp, timestamp, 0 ] )
+		except psycopg2.ProgrammingError:
+			pass
+		except:
+			raise
+
+	def saveValues( self ):
+		"""Save vCard values to table sogo<user><uuid>_quick"""
+
+		# Prepare list of columns of existing values
+		columns = [ 'name' ]
+		values  = [ self.file ]
+		types = []
+		cycle_end_date = None
+
+		if 'vevent' in self.obj.contents:
+			# VEVENT
+			ev = self.obj.vevent
+			rrule = ev.getChildValue( 'rrule' )
+			if rrule != None:
+				# Example: UNTIL=20160815T210000Z
+				for param in o.vevent.rrule.value.split( ';' ):
+					if param[:6] == 'UNTIL=':
+						cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))
+			data = {
+				'uid': self.file[:-4],
+				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
+				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
+				'cycleenddate': cycle_end_date,
+				'title': ev.summary.value,
+				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
+				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
+				'iscycle': 0 if rrule == None else 1,
+				'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
+				'classification': 0, # TODO ?
+				'isopaque': 0 if ev.getChildValue( 'transp' ) == None or ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
+				'status': 0, # TODO ev.getChildValue( 'status' ) = TENTATIVE, IN-PROCESS
+				'priority': 0, # TODO ?
+				'location': ev.getChildValue( 'location' ),
+				'orgmail': ev.getChildValue( 'organizer' ),
+				'partmails': ev.getChildValue( 'attendee' ),
+				'partstates': 0, # TODO: ev.attendee.params.get('PARTSTAT') = ['NEEDS-ACTION']
+				'category': None if ev.getChildValue( 'categories' ) == None else ','.join(ev.categories.value),
+				'sequence': 0 if ev.getChildValue( 'sequence' ) == None else int(ev.sequence),
+				'component': 'vevent',
+				'nextalarm': 0, # TODO need algorithm for calc next alarm
+				'description': ev.getChildValue( 'description' )
+			}
+		elif 'vtodo' in self.obj.contents:
+			# VTODO
+			ev = self.obj.vtodo
+			rrule = ev.getChildValue( 'rrule' )
+			if rrule != None:
+				# Example: UNTIL=20160815T210000Z
+				for param in o.vevent.rrule.value.split( ';' ):
+					if param[:6] == 'UNTIL=':
+						cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))
+			data = {
+				'uid': self.file[:-4],
+				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
+				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
+				'cycleenddate': cycle_end_date,
+				'title': ev.summary.value,
+				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
+				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
+				'iscycle': 0 if rrule == None else 1,
+				'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
+				'classification': 0, # TODO ?
+				'isopaque': 0 if ev.getChildValue( 'transp' ) == None or ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
+				'status': 0, # TODO ev.getChildValue( 'status' ) = TENTATIVE, IN-PROCESS
+				'priority': 0, # TODO ?
+				'location': ev.getChildValue( 'location' ),
+				'orgmail': ev.getChildValue( 'organizer' ),
+				'partmails': ev.getChildValue( 'attendee' ),
+				'partstates': 0, # TODO: ev.attendee.params.get('PARTSTAT') = ['NEEDS-ACTION']
+				'category': None if ev.getChildValue( 'categories' ) == None else ','.join(ev.categories.value),
+				'sequence': 0 if ev.getChildValue( 'sequence' ) == None else int(ev.sequence),
+				'component': 'vtodo',
+				'nextalarm': 0, # TODO need algorithm for calc next alarm
+				'description': ev.getChildValue( 'description' )
+			}
+
+		for key, value in data.items():
+			if value != None:
+				columns.append( key )
+				values.append( value )
+
+		# Modify lists
+		for i, col in enumerate( columns ):
+			columns[i] = 'c_' + columns[i]
+			types.append( '%s' )
+
+		try:
+			db.query( 'insert into %s_quick(%s) values(%s)' %
+				  ( self.table, ','.join( columns ), ','.join( types ) ),
+				  values )
+		except psycopg2.Error as e:
+			if e.pgcode == None:
+				pass
+			else:
+				raise
+
+	def save( self, table='' ):
+		"""Save vCard data in two tables"""
+		if table != '':
+			self.table = table
+			self.saveCard()
+			self.saveValues()
+
 class Folder:
 	"""Class of vobject folder"""
 	type = ''
@@ -328,6 +497,9 @@ class Folder:
 				if self.type == 'vcard' and obj.name == 'VCARD':
 					# Put in list vCardRecord object
 					self.items.append( vCardRecord( obj ) )
+				if self.type == 'calendar' and obj.name == 'VCALENDAR':
+					# Put in list calendarRecord object
+					self.items.append( calendarRecord( obj ) )
 			if verbose:
 				print( "Read records: %d" % ( len( self.items ) ) )
 			stream.close()
@@ -341,14 +513,13 @@ class Folder:
 			print( "Folder.save(%s)..." % ( db.connection_string ) )
 		# Create folders structure
 		if verbose:
-			print( "Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
-		if self.type == 'vcard':
-			self.record = vcardFolderRecord( db.user, os.sep.join( self.folder_path ) )
+			print( "Create folder in database: %s" % ( os.sep.join( self.folder_path ) ) )
+		self.record = DBFolder( self.type, db.user, os.sep.join( self.folder_path ) )
 		self.db_main_table = self.record.save()
 
 		# Dump vCard contents
 		if verbose:
-			print( "Folder.save.vcard_content" )
+			print( "Folder.save.items" )
 		for rec in self.items:
 			# Store item content and some values to database
 			rec.save( self.db_main_table )
