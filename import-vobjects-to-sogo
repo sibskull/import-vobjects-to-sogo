@@ -4,9 +4,6 @@
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
 VERSION = '1.1.0'
-contact_file_name = 'contacts'
-calendar_file_name = 'calendar'
-todo_file_name = 'todo'
 verbose = False
 folders = []
 
@@ -21,6 +18,12 @@ import hashlib
 import time
 from pprint import pprint
 from psycopg2.extras import NamedTupleCursor
+
+supported_types = {
+	 'vcard':  'contacts',
+	 'vevent': 'calendar',
+	 'vtodo':  'todo'
+	}
 
 # Get timestamp
 timestamp = int(time.time())
@@ -119,8 +122,8 @@ class DB:
 
 db = DB()
 
-class FolderRecord:
-	"""Class for representative Folder in database"""
+class vcardFolderRecord:
+	"""Class for representative vcard folder in database"""
 	user = ''
 	name = ''
 	real_name = ''
@@ -298,35 +301,38 @@ class vCardRecord:
 			self.saveValues()
 
 class Folder:
-	"""Class of vCard folder"""
+	"""Class of vobject folder"""
+	type = ''
 	items = []
 	file_name = ''
 	folder_path = []
 	record = None
 	db_main_table = ''
 
-	def __init__( self, base_path, directory ):
+	def __init__( self, type, base_path, directory ):
 		"""Create new folder instance"""
-		self.file_name = os.path.join( base_path, directory, contact_file_name )
-		self.folder_path = directory.split( os.sep )
+		self.type = type
+		if type in supported_types:
+			self.file_name = os.path.join( base_path, directory, supported_types[ type ] )
+			self.folder_path = directory.split( os.sep )
 		self.items = []
 		db_main_table = ''
 
 	def read( self ):
-		"""Open file and read all vCard items in self.items"""
+		"""Open file and read all vobject items in self.items"""
 		if verbose:
 			print( "Folder.read(%s)..." % ( self.file_name ) )
 		try:
 			stream = open( self.file_name, 'r', encoding='utf-8' )
 			for obj in vobject.readComponents( stream ):
-				if obj.name == 'VCARD':
+				if self.type == 'vcard' and obj.name == 'VCARD':
 					# Put in list vCardRecord object
 					self.items.append( vCardRecord( obj ) )
 			if verbose:
-				print( "Read vcards: %d" % ( len( self.items ) ) )
+				print( "Read records: %d" % ( len( self.items ) ) )
 			stream.close()
 		except:
-			print( "Error reading contacts from %s" % ( self.file_name ) )
+			print( "Error reading records from %s" % ( self.file_name ) )
 			raise
 
 	def save( self, cursor ):
@@ -336,15 +342,16 @@ class Folder:
 		# Create folders structure
 		if verbose:
 			print( "Create folder record: %s" % ( os.sep.join( self.folder_path ) ) )
-		self.record = FolderRecord( db.user, os.sep.join( self.folder_path ) )
+		if self.type == 'vcard':
+			self.record = vcardFolderRecord( db.user, os.sep.join( self.folder_path ) )
 		self.db_main_table = self.record.save()
 
 		# Dump vCard contents
 		if verbose:
 			print( "Folder.save.vcard_content" )
-		for card in self.items:
-			# Store vCard content and values to database
-			card.save( self.db_main_table )
+		for rec in self.items:
+			# Store item content and some values to database
+			rec.save( self.db_main_table )
 
 # Parse command line arguments
 parser = argparse.ArgumentParser( description='Script for import contacts, calendars and todos from files to SOGo database',
@@ -374,15 +381,15 @@ except:
 
 # Walk through folders containing file contacts
 for cdir, dirs, files in os.walk( args.directory ):
-	if contact_file_name in files:
-		if verbose:
-			print( "Found %s with %s" % ( cdir, contact_file_name ) )
-		# Remove basedir from path and possible os.sep
-		if args.directory[-1:] == os.sep:
-			args.directory = args.directory[:-1]
-		folder = Folder( args.directory, cdir[len(args.directory)+1:] )
-		folders.append( folder )
-		# Open file and store as list of vobject objects (vCard)
-		folder.read()
-		# Store in database
-		folder.save( args.db_connect )
+	for type, file_name in supported_types.items():
+		if file_name in files:
+			print( "Folder %s/%s (%s)" % ( cdir, file_name, type ) )
+			# Remove basedir from path and possible os.sep
+			if args.directory[-1:] == os.sep:
+				args.directory = args.directory[:-1]
+			folder = Folder( type, args.directory, cdir[len(args.directory)+1:] )
+			folders.append( folder )
+			# Open file and store as list of vobject objects (vCard)
+			folder.read()
+			# Store in database
+			folder.save( args.db_connect )
