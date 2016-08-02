@@ -1,10 +1,12 @@
 #!/usr/bin/python3
 
-# Script for add contacts from files SOGo database
+# Script for add contacts, calendars and todos from files SOGo database
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
-VERSION = '1.0.0'
+VERSION = '1.1.0'
 contact_file_name = 'contacts'
+calendar_file_name = 'calendar'
+todo_file_name = 'todo'
 verbose = False
 folders = []
 
@@ -345,8 +347,8 @@ class Folder:
 			card.save( self.db_main_table )
 
 # Parse command line arguments
-parser = argparse.ArgumentParser( description='Script for import contacts from files SOGo database',
-                                  epilog="Example: ./import-contacts --db 'postgresql://sogo@/sogo/sogo_folder_info' dod" )
+parser = argparse.ArgumentParser( description='Script for import contacts, calendars and todos from files to SOGo database',
+                                  epilog="Example: ./import-vobjects-to-sogo --db 'postgresql://sogo@/sogo/sogo_folder_info' dod" )
 parser.add_argument( 'user_name', help='SOGo user name' )
 parser.add_argument( '--db', dest='db_connect', required=True,
                      help='SOGo database connection string (see OCSFolderInfoURL in /etc/sogo/sogo.conf)' )
