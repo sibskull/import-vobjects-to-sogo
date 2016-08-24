@@ -3,7 +3,7 @@
 # Script for add contacts, calendars and todos from files SOGo database
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
-VERSION = '1.1.0'
+VERSION = '1.1.1'
 verbose = False
 folders = []
 
@@ -155,11 +155,9 @@ class DBFolder:
 
 		if type == 'vcard':
 			self.c_path3 = 'Contacts'
-			self.c_foldername = 'Personal Address Book'
 			self.c_folder_type = 'Contact'
 		if type == 'calendar':
 			self.c_path3 = 'Calendar'
-			self.c_foldername = 'Personal Calendar'
 			self.c_folder_type = 'Appointment'
 
 		# Process folder name and path
@@ -168,7 +166,7 @@ class DBFolder:
 		if not name in default_folders:
 			self.uuid = generate_uuid()
 			self.c_path4 = self.uuid
-			self.c_foldername = base_name
+		self.c_foldername = base_name
 		self.c_path = '/' + self.c_path1 + '/' + self.c_path2 + '/'+ self.c_path3 + '/'+ self.c_path4
 
 		# Short UUID and locations
