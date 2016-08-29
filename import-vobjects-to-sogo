@@ -396,7 +396,7 @@ class calendarRecord:
 		rrule = ev.getChildValue( 'rrule' )
 		if rrule != None:
 			# Example: UNTIL=20160815T210000Z
-			for param in o.vevent.rrule.value.split( ';' ):
+			for param in rrule.value.split( ';' ):
 				if param[:6] == 'UNTIL=':
 					cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))-time.timezone
 		if ev.getChildValue( 'status' ) == 'CONFIRMED':
@@ -412,7 +412,7 @@ class calendarRecord:
 			'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
 			'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
 			'iscycle': 0 if rrule == None else 1,
-			'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
+			'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( rrule.value ),
 			'classification': 0, # TODO ?
 			'isopaque': 0 if ev.getChildValue( 'transp' ) != None and ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
 			'status': status,
