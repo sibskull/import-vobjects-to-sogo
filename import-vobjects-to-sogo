@@ -3,7 +3,7 @@
 # Script for add contacts, calendars and todos from files SOGo database
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
-VERSION = '1.1.1'
+VERSION = '1.1.2'
 verbose = False
 folders = []
 
@@ -163,9 +163,11 @@ class DBFolder:
 		# Process folder name and path
 		self.c_path2 = self.user
 		base_name  = name.split( '/' )[-1:][0]
-		if not name in default_folders:
+		if not base_name in default_folders:
 			self.uuid = generate_uuid()
 			self.c_path4 = self.uuid
+		else:
+			self.c_path4 = 'personal'
 		self.c_foldername = base_name
 		self.c_path = '/' + self.c_path1 + '/' + self.c_path2 + '/'+ self.c_path3 + '/'+ self.c_path4
 
@@ -387,7 +389,7 @@ class calendarRecord:
 				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
 				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
 				'cycleenddate': cycle_end_date,
-				'title': ev.summary.value,
+				'title': ev.getChildValue( 'summary', '' ),
 				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
 				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
 				'iscycle': 0 if rrule == None else 1,
@@ -420,7 +422,7 @@ class calendarRecord:
 				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
 				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
 				'cycleenddate': cycle_end_date,
-				'title': ev.summary.value,
+				'title': ev.getChildValue( 'summary', '' ),
 				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
 				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
 				'iscycle': 0 if rrule == None else 1,
