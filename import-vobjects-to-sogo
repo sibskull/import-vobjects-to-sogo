@@ -3,7 +3,7 @@
 # Script for add contacts, calendars and todos from files SOGo database
 # (c) 2016 Andrey Cherepanov <cas@altlinux.org>
 
-VERSION = '1.1.2'
+VERSION = '1.1.3'
 verbose = False
 folders = []
 
@@ -346,6 +346,8 @@ class vCardRecord:
 
 class calendarRecord:
 	"""Class of single calendar entry"""
+	type = ''
+	ev = None
 	obj = None
 	file = ''
 	table = ''
@@ -354,10 +356,19 @@ class calendarRecord:
 		"""Create new vCard object to put into database"""
 		self.obj = obj
 		self.file = generate_uuid() + '.ics'
+		if 'vevent' in self.obj.contents:
+			self.type = 'vevent'
+			self.ev = self.obj.vevent
+		else:
+			self.type = 'vtodo'
+			self.ev = self.obj.vtodo
+		if self.ev.getChildValue( 'uid' ) != None:
+			self.file = self.ev.uid.value
 
 	def saveCard( self ):
 		"""Save vCard content to table sogo<user><uuid>"""
 		try:
+			db.query( "delete from " + self.table + " where c_name='" + self.file + "'" )
 			db.query( """insert into """ + self.table + """(c_name,c_content,c_creationdate,c_lastmodified,c_version)
 				  values(%s,%s,%s,%s,%s)""",
 				  [ self.file, self.obj.serialize(), timestamp, timestamp, 0 ] )
@@ -369,78 +380,53 @@ class calendarRecord:
 	def saveValues( self ):
 		"""Save vCard values to table sogo<user><uuid>_quick"""
 
+		if self.ev == None:
+			return
+
 		# Prepare list of columns of existing values
 		columns = [ 'name' ]
 		values  = [ self.file ]
 		types = []
 		cycle_end_date = None
+		status = 0
 
-		if 'vevent' in self.obj.contents:
-			# VEVENT
-			ev = self.obj.vevent
-			rrule = ev.getChildValue( 'rrule' )
-			if rrule != None:
-				# Example: UNTIL=20160815T210000Z
-				for param in o.vevent.rrule.value.split( ';' ):
-					if param[:6] == 'UNTIL=':
-						cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))
-			data = {
-				'uid': self.file[:-4],
-				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
-				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
-				'cycleenddate': cycle_end_date,
-				'title': ev.getChildValue( 'summary', '' ),
-				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
-				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
-				'iscycle': 0 if rrule == None else 1,
-				'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
-				'classification': 0, # TODO ?
-				'isopaque': 0 if ev.getChildValue( 'transp' ) == None or ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
-				'status': 0, # TODO ev.getChildValue( 'status' ) = TENTATIVE, IN-PROCESS
-				'priority': 0, # TODO ?
-				'location': ev.getChildValue( 'location' ),
-				'orgmail': ev.getChildValue( 'organizer' ),
-				'partmails': ev.getChildValue( 'attendee' ),
-				'partstates': 0, # TODO: ev.attendee.params.get('PARTSTAT') = ['NEEDS-ACTION']
-				'category': None if ev.getChildValue( 'categories' ) == None else ','.join(ev.categories.value),
-				'sequence': 0 if ev.getChildValue( 'sequence' ) == None else int(ev.sequence),
-				'component': 'vevent',
-				'nextalarm': 0, # TODO need algorithm for calc next alarm
-				'description': ev.getChildValue( 'description' )
-			}
-		elif 'vtodo' in self.obj.contents:
-			# VTODO
-			ev = self.obj.vtodo
-			rrule = ev.getChildValue( 'rrule' )
-			if rrule != None:
-				# Example: UNTIL=20160815T210000Z
-				for param in o.vevent.rrule.value.split( ';' ):
-					if param[:6] == 'UNTIL=':
-						cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))
-			data = {
-				'uid': self.file[:-4],
-				'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s')),
-				'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s')),
-				'cycleenddate': cycle_end_date,
-				'title': ev.getChildValue( 'summary', '' ),
-				'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
-				'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
-				'iscycle': 0 if rrule == None else 1,
-				'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
-				'classification': 0, # TODO ?
-				'isopaque': 0 if ev.getChildValue( 'transp' ) == None or ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
-				'status': 0, # TODO ev.getChildValue( 'status' ) = TENTATIVE, IN-PROCESS
-				'priority': 0, # TODO ?
-				'location': ev.getChildValue( 'location' ),
-				'orgmail': ev.getChildValue( 'organizer' ),
-				'partmails': ev.getChildValue( 'attendee' ),
-				'partstates': 0, # TODO: ev.attendee.params.get('PARTSTAT') = ['NEEDS-ACTION']
-				'category': None if ev.getChildValue( 'categories' ) == None else ','.join(ev.categories.value),
-				'sequence': 0 if ev.getChildValue( 'sequence' ) == None else int(ev.sequence),
-				'component': 'vtodo',
-				'nextalarm': 0, # TODO need algorithm for calc next alarm
-				'description': ev.getChildValue( 'description' )
-			}
+		ev = self.ev
+
+		# Some fields computation
+		rrule = ev.getChildValue( 'rrule' )
+		if rrule != None:
+			# Example: UNTIL=20160815T210000Z
+			for param in o.vevent.rrule.value.split( ';' ):
+				if param[:6] == 'UNTIL=':
+					cycle_end_date = int(datetime.strptime(param[6:],'%Y%m%dT%H%M%SZ').strftime('%s'))-time.timezone
+		if ev.getChildValue( 'status' ) == 'CONFIRMED':
+			status = 1
+
+		# Fill fields
+		data = {
+			'uid': ev.uid.value if ev.getChildValue( 'uid' ) != None else self.file[:-4],
+			'startdate': 0 if ev.getChildValue( 'dtstart' ) == None else int(ev.dtstart.value.strftime('%s'))-time.timezone,
+			'enddate': 0 if ev.getChildValue( 'dtend' ) == None else int(ev.dtend.value.strftime('%s'))-time.timezone,
+			'cycleenddate': cycle_end_date,
+			'title': ev.getChildValue( 'summary', '' ),
+			'participants': None if ev.getChildValue('attendee') == None else ','.join( ev.attendee.params.get('CN') ),
+			'isallday': 1 if ev.getChildValue( 'dtstart' ) != None and ev.getChildValue( 'dtend' ) != None and ev.dtend.value-ev.dtstart.value == timedelta(1) else 0,
+			'iscycle': 0 if rrule == None else 1,
+			'cycleinfo': None if rrule == None else '{rules = ("%s"); }' % ( o.vevent.rrule.value ),
+			'classification': 0, # TODO ?
+			'isopaque': 0 if ev.getChildValue( 'transp' ) != None and ev.getChildValue( 'transp' ) != 'OPAQUE' else 1,
+			'status': status,
+			'priority': 0, # TODO ?
+			'location': ev.getChildValue( 'location' ),
+			'orgmail': ev.getChildValue( 'organizer', '' ),
+			'partmails': ev.getChildValue( 'attendee' ),
+			'partstates': '', # TODO: ev.attendee.params.get('PARTSTAT') = ['NEEDS-ACTION']
+			'category': None if ev.getChildValue( 'categories' ) == None else ','.join(ev.categories.value),
+			'sequence': 0 if ev.getChildValue( 'sequence' ) == None else int(ev.sequence),
+			'component': self.type,
+			'nextalarm': 0, # TODO need algorithm for calc next alarm
+			'description': ev.getChildValue( 'description', '' )
+		}
 
 		for key, value in data.items():
 			if value != None:
@@ -453,6 +439,7 @@ class calendarRecord:
 			types.append( '%s' )
 
 		try:
+			db.query( "delete from " + self.table + "_quick where c_name='" + self.file + "'" )
 			db.query( 'insert into %s_quick(%s) values(%s)' %
 				  ( self.table, ','.join( columns ), ','.join( types ) ),
 				  values )
